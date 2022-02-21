@@ -1,0 +1,5 @@
+# gitignore
+
+# Python specific
+__pycache__
+
