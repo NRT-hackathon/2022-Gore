@@ -16,13 +16,16 @@ Implementations of generative models for structure generation of heterogeneous m
 
 
 ## Setup
-This code is written in python and is built on top of the pytorch library. You will need to have these installed
-in order to use the code. We recommend using a package management system such as `conda` or `poetry` to setup a
+This code is written in python and is built on top of the pytorch library.
+You will need to have these installed in order to use the code. We recommend
+using a package management system such as `conda` or `poetry` to setup a
 virtual environment for this project.
 
 
-We provide a script to create such an environment using `conda` in the developer folder. This script will install 
-all required dependencies. After cloning the repository please follow the following steps to setup the environment:
+We provide a script to create such an environment using `conda` in the 
+developer folder. This script will install all required dependencies. After
+cloning the repository please follow the following steps to setup the 
+environment:
 
 1. Open a terminal
 2. Navigate to the developer folder with your lpdgen clone
@@ -34,8 +37,8 @@ all required dependencies. After cloning the repository please follow the follow
 
 ** Windows users **
 
-4. Run the script. The script accepts two command line arguments a) path to your conda install
-   and b) device option which is either `cpu` or `gpu`.
+4. Run the script. The script accepts two command line arguments a) path to your 
+conda install and b) device option which is either `cpu` or `gpu`.
 
 ```
 > setup_environments.bat <path_to_conda_install> <device_option>
@@ -49,8 +52,8 @@ For example
 
 ** Linux/Mac users
 
-4. Run the script.  The script accepts two command line arguments a) path to your conda install 
-   and b) device option which is either `cpu` or `gpu`
+4. Run the script.  The script accepts two command line arguments a) path to
+your conda install and b) device option which is either `cpu` or `gpu`
    
 ```
 > sh setup_environments.sh <path_to_conda> <device_option>
@@ -63,9 +66,9 @@ For example
 ```
 
 
-Once the environment is set up, you can install either a developer or user version of library into 
-your environment. The developer install will track changes you might make to the lpdgen code, versus 
-the user version does not.
+Once the environment is set up, you can install either a developer or user
+version of library into your environment. The developer install will track
+changes you might make to the lpdgen code, versus the user version does not.
 
 1. Activate the environment
 2. Navigate to your clone of the lpdgen repository
@@ -88,11 +91,11 @@ the [Digital Rocks Project](https://www.digitalrocksportal.org/).
 
 
 ## Contributing
-We would love contributions from the user community to `lpdgen`. The user community
-is what makes a great tool. Please take a look at our open issues to see where we can
-use the help. If you have new ideas, please do open an issue documenting the idea.
-We use a simple `feature-branch-workflow` model. You will need direct access to the repo.
-Please contact the maintainers for access.
+We would love contributions from the user community to `lpdgen`. The user
+community is what makes a great tool. Please take a look at our open issues to
+see where we can use the help. If you have new ideas, please do open an issue 
+documenting the idea. We use a simple `feature-branch-workflow` model. You will
+need direct access to the repo. Please contact the maintainers for access.
 
 
 ## Acknowledgements

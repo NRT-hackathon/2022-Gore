@@ -3,3 +3,5 @@
 # Python specific
 __pycache__
 
+# Data related
+Data/

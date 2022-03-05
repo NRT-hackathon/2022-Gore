@@ -1,7 +1,7 @@
 import argparse
 import torch.nn as nn
 import torch.nn.parallel
-import pytorch_lightning as pl
+import pytorch_lightning as lightning
 
 
 class Discriminator(nn.Module):
@@ -137,7 +137,7 @@ class Generator(nn.Module):
 
 
 
-class DCGAN3D(pl.LightningModule):
+class DCGAN3D(lightning.LightningModule):
     """DCGAN 3D implementation.
 
     This module is implemented as a pytorch lightning module
@@ -302,4 +302,48 @@ class DCGAN3D(pl.LightningModule):
         parser.add_argument("--nz", default=100, type=int)
         parser.add_argument("--learning_rate", default=0.0002, type=float)
         return parser
+
+
+def cli_main(args, parser=None, debug=False):
+
+    # Set seed for debugging runs
+    if debug:
+        lightning.seed_everything(1234)
+
+    if not parser:
+        parser = argparse.ArgumentParser()
+
+    parser.add_argument("--data_dir", type=str)
+    parser.add_argument("--output_dir", type=str)
+    parser.add_argument("--experiment_name", type=str)
+    parser.add_argument("--batch_size", default=64, type=int)
+    parser.add_argument("--image_size", default=64, type=int)
+    parser.add_argument("--num_workers", default=8, type=int)
     
+    # Add model specific arguments
+    parser = DCGAN3D.add_model_specific_args(parser)
+
+    # Add lightning.Trainer arguments
+    parser = lightning.Trainer.add_argparse_args(parser)
+
+    # Parse arguments
+    args = parser.parse_args(args)
+
+    # Setup the dataloader
+    # dataset = <your_torch.Dataset>
+    # dataloader = torch.DataLoader(
+    #     dataset, 
+    #     batch_size=args.batch_size, 
+    #     shuffle=True, 
+    #     num_workers=args.num_workers
+    # )
+
+
+    # Setup[ the model
+    # model = models.DCGAN3D(**vars(args))
+
+    # Setup the trainer
+    # trainer = lightning.Trainer.from_argparse_args(args)
+
+    # Fit the model
+    # trainer.fit(model, dataloader)

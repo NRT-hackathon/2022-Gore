@@ -1,4 +1,5 @@
 channels:
-  - conda-forge
   - pytorch
-channel_priority: flexible
+  - conda-forge
+
+channel_priority: true
