@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.parallel
 import pytorch_lightning as lightning
 
+from ..io import DRPDataModule
+
 
 class Discriminator(nn.Module):
     """Discriminator network
@@ -329,21 +331,14 @@ def cli_main(args, parser=None, debug=False):
     # Parse arguments
     args = parser.parse_args(args)
 
-    # Setup the dataloader
-    # dataset = <your_torch.Dataset>
-    # dataloader = torch.DataLoader(
-    #     dataset, 
-    #     batch_size=args.batch_size, 
-    #     shuffle=True, 
-    #     num_workers=args.num_workers
-    # )
-
-
+    # Setup the dataloader/datamodule
+    # datamodule = DRPDataModule()
+    
     # Setup[ the model
-    # model = models.DCGAN3D(**vars(args))
+    # model = models.DCGAN3D()
 
     # Setup the trainer
     # trainer = lightning.Trainer.from_argparse_args(args)
 
     # Fit the model
-    # trainer.fit(model, dataloader)
+    # trainer.fit(model, datamodule)
