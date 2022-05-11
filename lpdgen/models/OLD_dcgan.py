@@ -7,7 +7,6 @@ from iolocal import *
 import os
 import numpy as np
 from sklearn.ensemble._hist_gradient_boosting import loss
-from scipy.stats import wasserstein_distance
 
 
 class Discriminator(nn.Module):
@@ -70,10 +69,6 @@ class Discriminator(nn.Module):
                 nn.LeakyReLU(0.2, inplace=True)
             )
         else:
-            #block = nn.Sequential(
-            #    nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding, bias=bias, groups=1),
-            #    nn.Sigmoid()
-            #)
             block = nn.Sequential(
                 nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding, bias=bias, groups=1),
                 nn.Linear(out_channels, 1, bias=bias)
@@ -163,8 +158,8 @@ class DCGAN3D(lightning.LightningModule):
     discriminator: torch.nn.Module
         The discriminator neural network
 
-    <strike>criterion: torch.nn._Loss
-        Loss criterion </strike>
+    criterion: torch.nn._Loss
+        Loss criterion
 
     hparams: 
         Model hyperparameters that are passed to the __init__ function
@@ -172,14 +167,13 @@ class DCGAN3D(lightning.LightningModule):
 
     """
 
-
     # def __init__(self, ngf=64, ndf=64, image_channels=1, nz=128, learning_rate=2e-4, latent_dim=32, image_size=64, **kwargs):
-    def __init__(self, ngf=64, ndf=64, image_channels=1, nz=64, learning_rate=0.00005, latent_dim=32, image_size=64, load_model_pth='n', **kwargs):
+    def __init__(self, ngf=64, ndf=64, image_channels=1, nz=64, learning_rate=2e-4, latent_dim=32, image_size=64, load_model_pth='n', **kwargs):
         """
         Parameters
         ----------
-        <strike> beta1: float
-            Beta1 value for Adam optimizer </strike>
+        beta1: float
+            Beta1 value for Adam optimizer
         
         ngf: int 
             Number of feature maps to use for the generator
@@ -205,6 +199,8 @@ class DCGAN3D(lightning.LightningModule):
         self.generator = self._get_generator()
         self.discriminator = self._get_discriminator()
 
+        self.criterion = nn.BCELoss()
+        
         self.save_path = './models_done'
         
         self.opt_disc = None
@@ -214,55 +210,49 @@ class DCGAN3D(lightning.LightningModule):
         
         self.best_loss = np.inf
         
-        if os.getenv("SLURM_JOB_ID") is not None:
-            self.slurm_job_id = os.environ["SLURM_JOB_ID"]
-            print("--------------------------------")
-            print("slurm_job_id: " + self.slurm_job_id)
-            print("--------------------------------")
-        else:
-            print(">>> Not running on an HPC.")
-            
+        self.slurm_job_id = os.environ["SLURM_JOB_ID"]
+        print("--------------------------------")
+        print("slurm_job_id: " + self.slurm_job_id)
+        print("--------------------------------")
+        
         print(self.hparams.keys())
         
         self.load_model_pth = load_model_pth
         
         # Call train.py with "--load_model_path <location and name of saved model>" to start training from a saved model
-        # current method idea from: https://discuss.pytorch.org/t/saving-model-and-optimiser-and-scheduler/52030/8
+        # https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_a_general_checkpoint.html
         if self.load_model_pth != 'n':
             print("Loading model from: '" + self.load_model_pth + "'")
             checkpoint = torch.load(self.load_model_pth)
-            print(list(checkpoint.keys()))
-            self.load_state_dict(checkpoint['model_state_dict']),
-            self.opt_disc = checkpoint['disc_optimizer'],
-            self.opt_gen = checkpoint['gen_optimizer'],
+            self.load_state_dict(checkpoint['model_state_dict'])
+            self.opt_disc.load_state_dict(checkpoint['disc_optimizer_state_dict'])
+            self.opt_gen.load_state_dict(checkpoint['gen_optimizer_state_dict'])
             self.epoch_counting = int(checkpoint['epoch']) + 1
-
+            self.best_loss = checkpoint['loss']
 
     def _get_generator(self):
         generator = Generator(self.hparams.image_size, self.hparams.image_channels, self.hparams.ngf, self.hparams.nz)
         generator.apply(self._weights_init)
-        
         return generator
 
+        # def __init__(self, image_size, n_channels, ngf, nz):
 
     def _get_discriminator(self):
         discriminator = Discriminator(self.hparams.image_size, self.hparams.image_channels, self.hparams.ndf)
         discriminator.apply(self._weights_init)
-        
         return discriminator
-
 
     @staticmethod
     def _weights_init(m):
         """Initialize the weights of the network"""
-        
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
             nn.init.normal_(m.weight.data, 0.0, 0.02)
         elif classname.find('BatchNorm') != -1:
             nn.init.normal_(m.weight.data, 1.0, 0.02)
             nn.init.constant_(m.bias.data, 0)
-
+        
+        # pass
 
     def configure_optimizers(self):
         """Configure the optimizer parameters"""
@@ -283,6 +273,7 @@ class DCGAN3D(lightning.LightningModule):
             Random noise 
         """
         
+        # noise = noise.view(*noise.shape, 1, 1)
         return self.generator(noise)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
@@ -299,11 +290,10 @@ class DCGAN3D(lightning.LightningModule):
 
         return result
 
-    
     def validation_step(self, batch, batch_idx):
-        print()
-        print("Validation ")
-        result = self._gen_step(batch)
+        #print("Validation ")
+        real = batch
+        result = self._gen_step(real)
         return result
 
     def _disc_step(self, real):
@@ -322,13 +312,17 @@ class DCGAN3D(lightning.LightningModule):
         #
         # Wasserstein loss for discriminator/critic
         
-        ## Generate a set of FAKE outputs, get the discriminator's reaction to them, then do the same with the inputed set of REAL inputs
-        fake_pred = self._get_fake_pred(real)
+        # Generate a set of FAKE outputs, get the discriminator's reaction to them
+        batch_size = len(real)
+        noise = self._get_noise(batch_size, self.hparams.latent_dim)
+        fake = self(noise)
+        fake_pred = self.discriminator(fake)
+        
+        # Take the set of REAL outputs, get the discriminator's reaction to them
         real_pred = self.discriminator(real)
-
+        
         # Based on https://agustinus.kristia.de/techblog/2017/02/04/wasserstein-gan/ 
         return (torch.mean(real_pred) - torch.mean(fake_pred))
-
 
     def _get_gen_loss(self, real):
         # Argument:
@@ -344,21 +338,20 @@ class DCGAN3D(lightning.LightningModule):
 
 
     def _get_fake_pred(self, real):
+        # print(self.hparams)
+        
         batch_size = len(real)
         noise = self._get_noise(batch_size, self.hparams.latent_dim)
-        fake = self.generator(noise)
+        fake = self(noise)
         fake_pred = self.discriminator(fake)
 
         return fake_pred
 
     def _get_noise(self, n_samples, latent_dim):
         batch_size_loc = 16
-        
         rand_input = torch.randn(batch_size_loc * 64 * 1 * 1 * 1, device=self.device)
         rand_input = rand_input.view(batch_size_loc, 64, 1, 1, 1)
-        
         return rand_input
-        
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -368,42 +361,25 @@ class DCGAN3D(lightning.LightningModule):
         parser.add_argument("--ndf", default=64, type=int)
         parser.add_argument("--nz", default=64, type=int)
         parser.add_argument("--learning_rate", default=0.0002, type=float)
-        
         return parser
 
-    def validation_epoch_end(self, outputs):
+    def training_epoch_end(self, outputs):
+        # Create a test output from the generator
+        fake_data = self._get_fake_pred(['a'])
+        torch.save(fake_data, os.path.join(self.save_path, self.slurm_job_id + '_generated_prediction_' + str(self.epoch_counting) + '.torchtensor'))
         
-        # Clip parameters in discriminator to be between -0.01 and +0.01, per the Arjovsky WGAN paper.        
-        for paramtr in self.discriminator.parameters():
-            paramtr.data.clamp_(-0.01, 0.01)
-        
-        # Begin saving off a generated volume as a numpy array.
-        batch_size_loc = 1
-        rand_input = torch.randn(batch_size_loc * 64 * 1 * 1 * 1)
-        rand_input = rand_input.view(batch_size_loc, 64, 1, 1, 1)
-        
-        output = self.generator(rand_input)
-        output = output.detach().numpy()
-        
-        file_name = str(self.slurm_job_id) + "_generatedvolume_" + str(self.epoch_counting) + '.npy'
-        np.save(os.path.join(self.save_path, file_name), output)
-        #print("numpy matrix of generated volume saved to: " + file_name)
-        # Done saving off a generated volume
-
-        # Save off the model.
-        torch.save({
+        if self.epoch_counting % 5 == 0:
+            torch.save({
                 'model_state_dict': self.state_dict(),
-                'disc_optimizer': self.opt_disc,
-                'gen_optimizer': self.opt_gen,
-                'loss_info': outputs,
-                'epoch': self.epoch_counting
-                }, os.path.join(self.save_path, str(self.slurm_job_id) + '_model_and_opt_save_' + str(self.epoch_counting) + '.torchsave'))
+                'disc_optimizer_state_dict': self.opt_disc.state_dict(),
+                'gen_optimizer_state_dict': self.opt_gen.state_dict(),
+                'loss_info': outputs
+                }, os.path.join(self.save_path, self.slurm_job_id + '_model_and_opt_save_' + str(self.epoch_counting) + '.torchsave'))
         
         self.epoch_counting += 1
 
 
 def cli_main(args, parser=None, debug=False):
-
     # Set seed for debugging runs
     if debug:
         lightning.seed_everything(1234)
@@ -416,9 +392,9 @@ def cli_main(args, parser=None, debug=False):
     parser.add_argument("--data_dir", type=str)
     parser.add_argument("--output_dir", type=str)
     parser.add_argument("--experiment_name", type=str)
-    parser.add_argument("--batch_size", default=64, type=int)
+    parser.add_argument("--batch_size", default=16, type=int)
     parser.add_argument("--image_size", default=64, type=int)
-    parser.add_argument("--num_workers", default=64, type=int)
+    parser.add_argument("--num_workers", default=24, type=int)
     parser.add_argument("--latent_dim", default=32, type=int)
     parser.add_argument("--load_model_pth", default='n', type=str)
 
@@ -433,31 +409,30 @@ def cli_main(args, parser=None, debug=False):
     # Parse arguments
     args = parser.parse_args(args)
     
+    #print(args.load_model_path)
+     
     print(" #################################################################### args 2 " + str(args))
 
     # Setup the dataloader/datamodule
     datamodule = DRPDataModule()
-
+    
     # Setup[ the model
-    if args.load_model_pth != 'n':
-        print("Requesting load of pretrained model from " + args.load_model_pth)
-        model = DCGAN3D(load_model_pth=args.load_model_pth)
+    if args['load_model_pth'] != 'n':
+        print("Requesting load of pretrained model from " + args['load_model_pth'])
+        model = DCGAN3D(load_model_pth=args['load_model_pth'])
     else:
-        print("Instantiating new GAN")
+        print("Instantiating GAN")
         model = DCGAN3D()
+    # model = models.DCGAN3D()
 
     model.to(device)
-
-    if torch.cuda.is_available():
-        print(torch.cuda.get_device_name(0))
-    else:
-        print("Running on CPU.")
+    
+    print(torch.cuda.get_device_name(0))
     
     print(model)
-
+    
     # Setup the trainer
-    trainer = lightning.Trainer().from_argparse_args(args)
-    #trainer = lightning.Trainer(gpus=3).from_argparse_args(args)
+    trainer = lightning.Trainer(gpus=3).from_argparse_args(args)
 
     # Fit the model
     trainer.fit(model, datamodule)

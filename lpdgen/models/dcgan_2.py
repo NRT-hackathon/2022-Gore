@@ -31,6 +31,8 @@ class Discriminator(nn.Module):
     def __init__(self, image_size, n_channels, ndf):
         super(Discriminator, self).__init__()
         
+        # print(">>>>>>>>>>>>>>>>>>> Discriminator image_size, n_channels, ndf " + str((image_size, n_channels, ndf)))
+        
         if image_size % 16 != 0:
             raise ValueError("image_size has to be a multiple of 16")
 
@@ -41,6 +43,7 @@ class Discriminator(nn.Module):
 
         csize = image_size / 2
         cndf = ndf
+        # while csize > 16:
         while csize > 4:
             inc = cndf
             outc = cndf * 2
@@ -70,10 +73,6 @@ class Discriminator(nn.Module):
                 nn.LeakyReLU(0.2, inplace=True)
             )
         else:
-            #block = nn.Sequential(
-            #    nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding, bias=bias, groups=1),
-            #    nn.Sigmoid()
-            #)
             block = nn.Sequential(
                 nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding, bias=bias, groups=1),
                 nn.Linear(out_channels, 1, bias=bias)
@@ -214,20 +213,22 @@ class DCGAN3D(lightning.LightningModule):
         
         self.best_loss = np.inf
         
-        if os.getenv("SLURM_JOB_ID") is not None:
-            self.slurm_job_id = os.environ["SLURM_JOB_ID"]
-            print("--------------------------------")
-            print("slurm_job_id: " + self.slurm_job_id)
-            print("--------------------------------")
-        else:
-            print(">>> Not running on an HPC.")
-            
+        self.slurm_job_id = os.environ["SLURM_JOB_ID"]
+        print("--------------------------------")
+        print("slurm_job_id: " + self.slurm_job_id)
+        print("--------------------------------")
+        
         print(self.hparams.keys())
+        
+        # "Correct" answers to real and fake batches
+        self.real_correct = None
+        self.fake_correct = None
         
         self.load_model_pth = load_model_pth
         
         # Call train.py with "--load_model_path <location and name of saved model>" to start training from a saved model
-        # current method idea from: https://discuss.pytorch.org/t/saving-model-and-optimiser-and-scheduler/52030/8
+        # didn't work: https://pytorch.org/tutorials/recipes/recipes/saving_and_loading_a_general_checkpoint.html
+        # current method: https://discuss.pytorch.org/t/saving-model-and-optimiser-and-scheduler/52030/8
         if self.load_model_pth != 'n':
             print("Loading model from: '" + self.load_model_pth + "'")
             checkpoint = torch.load(self.load_model_pth)
@@ -244,18 +245,15 @@ class DCGAN3D(lightning.LightningModule):
         
         return generator
 
-
     def _get_discriminator(self):
         discriminator = Discriminator(self.hparams.image_size, self.hparams.image_channels, self.hparams.ndf)
         discriminator.apply(self._weights_init)
         
         return discriminator
 
-
     @staticmethod
     def _weights_init(m):
         """Initialize the weights of the network"""
-        
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
             nn.init.normal_(m.weight.data, 0.0, 0.02)
@@ -263,16 +261,14 @@ class DCGAN3D(lightning.LightningModule):
             nn.init.normal_(m.weight.data, 1.0, 0.02)
             nn.init.constant_(m.bias.data, 0)
 
-
     def configure_optimizers(self):
         """Configure the optimizer parameters"""
         lr = self.hparams.learning_rate
-
+        
         # W-gan uses RMSprop, per the Arjovsky paper        
         self.opt_disc = torch.optim.RMSprop(self.discriminator.parameters(), lr=lr)
         self.opt_gen = torch.optim.RMSprop(self.generator.parameters(), lr=lr)
         return [self.opt_disc, self.opt_gen], []
-
 
     def forward(self, noise):
         """Generates an image given input noise
@@ -287,22 +283,15 @@ class DCGAN3D(lightning.LightningModule):
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         real = batch
-
-        # Train discriminator
         result = None
         if optimizer_idx == 0:
             result = self._disc_step(real)
-
-        # Train generator
         if optimizer_idx == 1:
             result = self._gen_step(real)
-
         return result
 
     
     def validation_step(self, batch, batch_idx):
-        print()
-        print("Validation ")
         result = self._gen_step(batch)
         return result
 
@@ -320,14 +309,13 @@ class DCGAN3D(lightning.LightningModule):
         # Argument:
         #   real    A set of real samples
         #
-        # Wasserstein loss for discriminator/critic
+        # Wasserstein loss for discriminator/critic using linrary version of Wasserstein
         
-        ## Generate a set of FAKE outputs, get the discriminator's reaction to them, then do the same with the inputed set of REAL inputs
         fake_pred = self._get_fake_pred(real)
         real_pred = self.discriminator(real)
+        wass_dist = [wasserstein_distance(real_pred.detach().numpy(), fake_pred.detach().numpy())]      # List with one element, a float-64.
+        return torch.tensor(np.array(wass_dist), requires_grad = True)
 
-        # Based on https://agustinus.kristia.de/techblog/2017/02/04/wasserstein-gan/ 
-        return (torch.mean(real_pred) - torch.mean(fake_pred))
 
 
     def _get_gen_loss(self, real):
@@ -336,10 +324,10 @@ class DCGAN3D(lightning.LightningModule):
         #
         # Wasserstein loss for generator
     
-        # Generate a set of fake outputs
+        # Generate a set of fake outputs and get discriminator's result from it
         fake_pred = self._get_fake_pred(real)
         
-        # Based on https://agustinus.kristia.de/techblog/2017/02/04/wasserstein-gan/ 
+        # Based on https://agustinus.kristia.de/techblog/2017/02/04/wasserstein-gan/ and the Arjovsky paper
         return -torch.mean(fake_pred)
 
 
@@ -348,17 +336,13 @@ class DCGAN3D(lightning.LightningModule):
         noise = self._get_noise(batch_size, self.hparams.latent_dim)
         fake = self.generator(noise)
         fake_pred = self.discriminator(fake)
-
         return fake_pred
 
     def _get_noise(self, n_samples, latent_dim):
         batch_size_loc = 16
-        
         rand_input = torch.randn(batch_size_loc * 64 * 1 * 1 * 1, device=self.device)
         rand_input = rand_input.view(batch_size_loc, 64, 1, 1, 1)
-        
         return rand_input
-        
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -368,11 +352,9 @@ class DCGAN3D(lightning.LightningModule):
         parser.add_argument("--ndf", default=64, type=int)
         parser.add_argument("--nz", default=64, type=int)
         parser.add_argument("--learning_rate", default=0.0002, type=float)
-        
         return parser
 
     def validation_epoch_end(self, outputs):
-        
         # Clip parameters in discriminator to be between -0.01 and +0.01, per the Arjovsky WGAN paper.        
         for paramtr in self.discriminator.parameters():
             paramtr.data.clamp_(-0.01, 0.01)
@@ -387,7 +369,6 @@ class DCGAN3D(lightning.LightningModule):
         
         file_name = str(self.slurm_job_id) + "_generatedvolume_" + str(self.epoch_counting) + '.npy'
         np.save(os.path.join(self.save_path, file_name), output)
-        #print("numpy matrix of generated volume saved to: " + file_name)
         # Done saving off a generated volume
 
         # Save off the model.
@@ -403,7 +384,6 @@ class DCGAN3D(lightning.LightningModule):
 
 
 def cli_main(args, parser=None, debug=False):
-
     # Set seed for debugging runs
     if debug:
         lightning.seed_everything(1234)
@@ -419,7 +399,9 @@ def cli_main(args, parser=None, debug=False):
     parser.add_argument("--batch_size", default=64, type=int)
     parser.add_argument("--image_size", default=64, type=int)
     parser.add_argument("--num_workers", default=64, type=int)
+    
     parser.add_argument("--latent_dim", default=32, type=int)
+    
     parser.add_argument("--load_model_pth", default='n', type=str)
 
     # Add model specific arguments
@@ -432,7 +414,7 @@ def cli_main(args, parser=None, debug=False):
 
     # Parse arguments
     args = parser.parse_args(args)
-    
+     
     print(" #################################################################### args 2 " + str(args))
 
     # Setup the dataloader/datamodule
@@ -457,7 +439,6 @@ def cli_main(args, parser=None, debug=False):
 
     # Setup the trainer
     trainer = lightning.Trainer().from_argparse_args(args)
-    #trainer = lightning.Trainer(gpus=3).from_argparse_args(args)
 
     # Fit the model
     trainer.fit(model, datamodule)

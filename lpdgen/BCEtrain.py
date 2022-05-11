@@ -1,9 +1,13 @@
 import argparse
-from models import *
+from models import BCE_dcgan
 from io import *
 
-
 if __name__ == "__main__":
+
+    print("=========================")
+    print(">>>>>>>>>>> BCE gan start")
+    print("=========================")
+    print()
 
     # Create a root parser
     root_parser = argparse.ArgumentParser(add_help=False)
@@ -18,9 +22,6 @@ if __name__ == "__main__":
     # This will pick up which command was run
     root_args, func_args  = root_parser.parse_known_args()
 
-    # Run the training for a given model
-    if root_args.model == 'dcgan3d':
-        dcgan.cli_main(func_args, dcgan3d_parser)
-        print("done")
-    else:
-        raise ValueError(f'Unknown model {root_args.model}')
+    # Run the training
+    BCE_dcgan.cli_main(func_args, dcgan3d_parser)
+    print("done")
