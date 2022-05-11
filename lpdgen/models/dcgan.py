@@ -327,7 +327,7 @@ class DCGAN3D(lightning.LightningModule):
         real_pred = self.discriminator(real)
 
         # Based on https://agustinus.kristia.de/techblog/2017/02/04/wasserstein-gan/ 
-        return (torch.mean(real_pred) - torch.mean(fake_pred))
+        return -(torch.mean(real_pred) - torch.mean(fake_pred))
 
 
     def _get_gen_loss(self, real):

@@ -39,6 +39,12 @@ alpha_const = 0.05
 ts_start = math.trunc(time.time())
 print("Start - making figures for report and presentation.")
 
+def explode(data):
+    size = np.array(data.shape)*2
+    data_e = np.zeros(size - 1, dtype=data.dtype)
+    data_e[::2, ::2, ::2] = data
+    return data_e
+
 def get_lines_for_graph(wanted_format, file_wanted):
     # This is ugly but it's only going to be used a couple of times.
     linpath_porosity_read = False
@@ -519,6 +525,7 @@ print("27 - Epoch 38: Generating volumes and outputting as voxels")
 print("28 - Outputting chunks of test data (ground truth)")
 print("30 - Make analysis data, starting with a saved model and the held-out test data")
 print("31 - Make graphs from the data generated in option 30.")
+print('32 - Feature explanatory images')
 
 req_option = int(input("Enter desired option: "))
 
@@ -3158,6 +3165,115 @@ elif req_option == 31:
     make_graph_from_lists(model_porosity_vals, test_porosity_vals, histfile, linefile, "Comparison of Lineal Path-Derived Porosity for Model and Test Data", "Mean Porosity", "Samples", "upper right")
     
     print("Histograms and line graphs saved to " + out_directory)
+    
+elif req_option == 32:
+    print("Making explanatory images of features")
+    
+    file_in = 'C:/!data/college/2022 Spring/CISC867 - Soft Materials/goreCode/working/867-team-gore/analysis/test_samples/374_01_06_256.mat'
+    files_saved_out = 'C:/!data/college/2022 Spring/CISC867 - Soft Materials/goreCode/working/867-team-gore/analysis/figures_out/explain_feature_volumes/'
+    
+    incoming_data = loadmat(file_in)['bin']
+
+    i = incoming_data[64:128,:64,64:128]
+    matz = incoming_data[64:128,:64,64:128]
+    
+    """
+    ax = plt.figure().add_subplot(projection='3d')
+    plt.grid(False)
+    plt.axis('off')
+    ax.voxels(i, facecolors='oldlace', edgecolor='k', linewidth=0.01)
+
+    file_name_voxels = '374_01_06_256_subvolume_material.png'
+    file_out  = os.path.join(files_saved_out, file_name_voxels)
+    
+    plt.savefig(file_out, dpi=300)
+    plt.close()
+    """
+
+    i = np.invert(matz)
+    
+    for x in range(len(i)):
+        for y in range(len(i)):
+            for z in range(len(i)):
+                if matz[x,y,z] == 1:
+                     i[x,y,z] = 0
+                else:
+                    i[x,y,z] = 1 
+        
+    
+    ax = plt.figure().add_subplot(projection='3d')
+    plt.grid(False)
+    plt.axis('off')
+
+    # https://matplotlib.org/stable/gallery/mplot3d/voxels.html   
+    i2 = np.empty(i.shape, dtype=object)
+    matz2 = np.empty(i.shape, dtype=object)
+    for x in range(len(i2)):
+        for y in range(len(i2)):
+            for z in range(len(i2)):
+                if i[x,y,z] == 1:
+                     i2[x,y,z] = True
+                else:
+                    i2[x,y,z] =  False
+
+    for x in range(len(matz2)):
+        for y in range(len(matz2)):
+            for z in range(len(matz2)):
+                if matz[x,y,z] == 1:
+                     matz2[x,y,z] = True
+                else:
+                    matz2[x,y,z] =  False
+    
+    facecolors = np.where(matz2, 'peachpuff', 'oldlace') 
+    edgecolors = np.where(matz2, '#BFAB6E', '#7D84A6')
+    filled = np.ones(matz2.shape)
+    
+    # upscale the above voxel image, leaving gaps
+    filled_2 = explode(filled)
+    fcolors_2 = explode(facecolors)
+    ecolors_2 = explode(edgecolors)
+    
+    # Shrink the gaps
+    x, y, z = np.indices(np.array(filled_2.shape) + 1).astype(float) // 2
+    x[0::2, :, :] += 0.05
+    y[:, 0::2, :] += 0.05
+    z[:, :, 0::2] += 0.05
+    x[1::2, :, :] += 0.95
+    y[:, 1::2, :] += 0.95
+    z[:, :, 1::2] += 0.95
+    
+    ax = plt.figure().add_subplot(projection='3d')
+    plt.grid(False)
+    plt.axis('off')
+    
+    #ax.voxels(x, y, z, filled_2, facecolors=fcolors_2, edgecolors=ecolors_2)
+    
+    
+    """
+    voxelarray = i2 | matz2
+    colors = np.empty(voxelarray.shape, dtype=object)
+    colors[i2] == 'peachpuff'
+    colors[matz2] == 'oldlace'
+    ax.voxels(voxelarray, facecolors=colors, edgecolor='k', linewidth=0.01)
+    """
+  
+    """  
+    print("A")
+    ax.voxels(i, facecolors='peachpuff', edgecolor='k', linewidth=0.01)
+    print("B")
+    ax.voxels(incoming_data, facecolors='oldlace', edgecolor='k', linewidth=0.01)
+    print("C")
+    """
+
+    ax.voxels(matz2, facecolors='#BFAB6E', edgecolor='k', linewidth=0.01)
+
+    #file_name_voxels = '374_01_06_256_subvolume_void_and_material.png'
+    file_name_voxels = '374_01_06_256_subvolume_material.png'
+    file_out  = os.path.join(files_saved_out, file_name_voxels)
+    
+    plt.savefig(file_out, dpi=300)
+    plt.close()
+    
     
 
 
